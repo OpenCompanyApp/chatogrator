@@ -1,0 +1,19 @@
+parameters:
+    level: 6
+    paths:
+        - src/
+    excludePaths:
+        - src/Adapters/Discord/Gateway/
+    ignoreErrors:
+        # Traits may be used by consuming applications
+        - '#Trait .+ is used zero times and is not analysed#'
+
+        # Constants reserved for external use / forward compatibility
+        - '#Constant .+RESPONSE_CHANNEL_MESSAGE_WITH_SOURCE is unused#'
+        - '#Constant .+RESPONSE_UPDATE_MESSAGE is unused#'
+        - '#Constant .+RESPONSE_MODAL is unused#'
+
+        # Redis connection proxies commands via __call
+        -
+            message: '#Call to an undefined method Illuminate\\Redis\\Connections\\Connection::#'
+            path: src/State/RedisStateAdapter.php
