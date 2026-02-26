@@ -8,6 +8,7 @@ use OpenCompany\Chatogrator\Cards\Modal;
 use OpenCompany\Chatogrator\Chat;
 use OpenCompany\Chatogrator\Contracts\Adapter;
 use OpenCompany\Chatogrator\Messages\Author;
+use OpenCompany\Chatogrator\Messages\FileUpload;
 use OpenCompany\Chatogrator\Messages\Message;
 use OpenCompany\Chatogrator\Messages\PostableMessage;
 use OpenCompany\Chatogrator\Messages\SentMessage;
@@ -52,6 +53,15 @@ class MockAdapter implements Adapter
 
     /** @var array<int, array{channelId: string, message: PostableMessage|string}> */
     public array $channelMessages = [];
+
+    /** @var array<int, array{threadId: string, messageId: string}> */
+    public array $pinnedMessages = [];
+
+    /** @var array<int, array{threadId: string, messageId: string}> */
+    public array $unpinnedMessages = [];
+
+    /** @var array<int, array{threadId: string, file: FileUpload}> */
+    public array $sentFiles = [];
 
     public ?Message $nextParsedMessage = null;
 
@@ -194,7 +204,7 @@ class MockAdapter implements Adapter
         $this->removedReactions[] = ['threadId' => $threadId, 'messageId' => $messageId, 'emoji' => $emoji];
     }
 
-    public function startTyping(string $threadId): void
+    public function startTyping(string $threadId, ?string $status = null): void
     {
         $this->typingStarted[] = $threadId;
     }
@@ -296,6 +306,23 @@ class MockAdapter implements Adapter
         //
     }
 
+    public function sendFile(string $threadId, FileUpload $file): ?SentMessage
+    {
+        $this->sentFiles[] = ['threadId' => $threadId, 'file' => $file];
+
+        return null;
+    }
+
+    public function pinMessage(string $threadId, string $messageId): void
+    {
+        $this->pinnedMessages[] = ['threadId' => $threadId, 'messageId' => $messageId];
+    }
+
+    public function unpinMessage(string $threadId, string $messageId): void
+    {
+        $this->unpinnedMessages[] = ['threadId' => $threadId, 'messageId' => $messageId];
+    }
+
     public function reset(): void
     {
         $this->postedMessages = [];
@@ -309,6 +336,9 @@ class MockAdapter implements Adapter
         $this->modalsOpened = [];
         $this->streamedMessages = [];
         $this->channelMessages = [];
+        $this->pinnedMessages = [];
+        $this->unpinnedMessages = [];
+        $this->sentFiles = [];
         $this->nextParsedMessage = null;
         $this->initialized = false;
         $this->messageCounter = 0;

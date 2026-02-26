@@ -12,6 +12,7 @@ use OpenCompany\Chatogrator\Errors\ValidationError;
 use OpenCompany\Chatogrator\Messages\Author;
 use OpenCompany\Chatogrator\Messages\Message;
 use OpenCompany\Chatogrator\Messages\PostableMessage;
+use OpenCompany\Chatogrator\Messages\FileUpload;
 use OpenCompany\Chatogrator\Messages\SentMessage;
 use OpenCompany\Chatogrator\Types\ChannelInfo;
 use OpenCompany\Chatogrator\Types\FetchOptions;
@@ -31,12 +32,22 @@ class TeamsAdapter implements Adapter
     protected ?TeamsFormatConverter $formatConverter = null;
 
     /** @param array<string, mixed> $config */
-    public static function fromConfig(array $config): static
+    public static function fromConfig(array $config = []): static
     {
         $instance = new static;
-        $instance->config = $config;
+        $instance->config = array_merge(static::envDefaults(), $config);
 
         return $instance;
+    }
+
+    /** @return array<string, mixed> */
+    protected static function envDefaults(): array
+    {
+        return array_filter([
+            'app_id' => config('services.teams.app_id', env('TEAMS_APP_ID')),
+            'app_password' => config('services.teams.app_password', env('TEAMS_APP_PASSWORD')),
+            'bot_name' => config('services.teams.bot_name', env('TEAMS_BOT_NAME')),
+        ], fn ($v) => $v !== null);
     }
 
     public function name(): string
@@ -631,7 +642,7 @@ class TeamsAdapter implements Adapter
         // Teams Bot Framework doesn't support removing reactions via API
     }
 
-    public function startTyping(string $threadId): void
+    public function startTyping(string $threadId, ?string $status = null): void
     {
         $decoded = $this->decodeThreadId($threadId);
         $serviceUrl = $decoded['serviceUrl'];
@@ -693,6 +704,21 @@ class TeamsAdapter implements Adapter
     }
 
     public function onThreadSubscribe(string $threadId): void
+    {
+        //
+    }
+
+    public function sendFile(string $threadId, FileUpload $file): ?SentMessage
+    {
+        return null;
+    }
+
+    public function pinMessage(string $threadId, string $messageId): void
+    {
+        //
+    }
+
+    public function unpinMessage(string $threadId, string $messageId): void
     {
         //
     }

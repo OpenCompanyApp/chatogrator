@@ -10,6 +10,7 @@ use OpenCompany\Chatogrator\Chat;
 use OpenCompany\Chatogrator\Contracts\Adapter;
 use OpenCompany\Chatogrator\Errors\ValidationError;
 use OpenCompany\Chatogrator\Messages\Author;
+use OpenCompany\Chatogrator\Messages\FileUpload;
 use OpenCompany\Chatogrator\Messages\Message;
 use OpenCompany\Chatogrator\Messages\PostableMessage;
 use OpenCompany\Chatogrator\Messages\SentMessage;
@@ -64,12 +65,23 @@ class DiscordAdapter implements Adapter
     /**
      * @param array<string, mixed> $config
      */
-    public static function fromConfig(array $config): static
+    public static function fromConfig(array $config = []): static
     {
         $instance = new static;
-        $instance->config = $config;
+        $instance->config = array_merge(static::envDefaults(), $config);
 
         return $instance;
+    }
+
+    /** @return array<string, mixed> */
+    protected static function envDefaults(): array
+    {
+        return array_filter([
+            'bot_token' => config('services.discord.bot_token', env('DISCORD_BOT_TOKEN')),
+            'application_id' => config('services.discord.application_id', env('DISCORD_APPLICATION_ID')),
+            'public_key' => config('services.discord.public_key', env('DISCORD_PUBLIC_KEY')),
+            'gateway_secret' => config('services.discord.gateway_secret', env('DISCORD_GATEWAY_SECRET')),
+        ], fn ($v) => $v !== null);
     }
 
     public function name(): string
@@ -764,7 +776,7 @@ class DiscordAdapter implements Adapter
         );
     }
 
-    public function startTyping(string $threadId): void
+    public function startTyping(string $threadId, ?string $status = null): void
     {
         $decoded = $this->decodeThreadId($threadId);
 
@@ -884,6 +896,39 @@ class DiscordAdapter implements Adapter
     public function onThreadSubscribe(string $threadId): void
     {
         //
+    }
+
+    public function sendFile(string $threadId, FileUpload $file): ?SentMessage
+    {
+        $decoded = $this->decodeThreadId($threadId);
+        $channelId = $decoded['threadId'] ?? $decoded['channelId'];
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bot '.($this->config['bot_token'] ?? ''),
+        ])->attach('files[0]', $file->getContents(), $file->filename)
+            ->post("https://discord.com/api/v10/channels/{$channelId}/messages", [
+                'payload_json' => json_encode(['content' => $file->caption ?? '']),
+            ]);
+
+        $data = $response->json() ?? [];
+
+        return $this->buildSentMessage($data, $threadId);
+    }
+
+    public function pinMessage(string $threadId, string $messageId): void
+    {
+        $decoded = $this->decodeThreadId($threadId);
+        $channelId = $decoded['threadId'] ?? $decoded['channelId'];
+
+        $this->apiCall('PUT', "/channels/{$channelId}/pins/{$messageId}");
+    }
+
+    public function unpinMessage(string $threadId, string $messageId): void
+    {
+        $decoded = $this->decodeThreadId($threadId);
+        $channelId = $decoded['threadId'] ?? $decoded['channelId'];
+
+        $this->apiCall('DELETE', "/channels/{$channelId}/pins/{$messageId}");
     }
 
     // ── Internal Helpers ─────────────────────────────────────────────

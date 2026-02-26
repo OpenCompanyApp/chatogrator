@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use OpenCompany\Chatogrator\Cards\Modal;
 use OpenCompany\Chatogrator\Chat;
+use OpenCompany\Chatogrator\Messages\FileUpload;
 use OpenCompany\Chatogrator\Messages\Message;
 use OpenCompany\Chatogrator\Messages\PostableMessage;
 use OpenCompany\Chatogrator\Messages\SentMessage;
@@ -52,7 +53,7 @@ interface Adapter
 
     public function removeReaction(string $threadId, string $messageId, string $emoji): void;
 
-    public function startTyping(string $threadId): void;
+    public function startTyping(string $threadId, ?string $status = null): void;
 
     public function renderFormatted(string $markdown): string;
 
@@ -82,4 +83,10 @@ interface Adapter
     public function isDM(string $threadId): bool;
 
     public function onThreadSubscribe(string $threadId): void;
+
+    public function sendFile(string $threadId, FileUpload $file): ?SentMessage;
+
+    public function pinMessage(string $threadId, string $messageId): void;
+
+    public function unpinMessage(string $threadId, string $messageId): void;
 }

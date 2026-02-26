@@ -3,6 +3,7 @@
 namespace OpenCompany\Chatogrator\Adapters\Teams;
 
 use OpenCompany\Chatogrator\Cards\Card;
+use OpenCompany\Chatogrator\Cards\Elements\CardLink;
 use OpenCompany\Chatogrator\Cards\Elements\Divider;
 use OpenCompany\Chatogrator\Cards\Elements\Image;
 use OpenCompany\Chatogrator\Cards\Elements\Text;
@@ -58,6 +59,7 @@ class TeamsCardRenderer
                 'divider' => $body[] = $this->renderDivider(),
                 'fields' => $body[] = $this->renderFields($element['fields']),
                 'actions' => $actions = array_merge($actions, $this->renderActions($element['actions'])),
+                'card_link' => $body[] = $this->renderCardLink($element['link']),
                 default => null,
             };
         }
@@ -120,6 +122,16 @@ class TeamsCardRenderer
         return [
             'type' => 'Container',
             'items' => $items,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    protected function renderCardLink(CardLink $link): array
+    {
+        return [
+            'type' => 'TextBlock',
+            'text' => '['.$link->label.']('.$link->url.')',
+            'wrap' => true,
         ];
     }
 

@@ -3,6 +3,7 @@
 namespace OpenCompany\Chatogrator\Adapters\Linear;
 
 use OpenCompany\Chatogrator\Cards\Card;
+use OpenCompany\Chatogrator\Cards\Elements\CardLink;
 use OpenCompany\Chatogrator\Cards\Elements\Divider;
 use OpenCompany\Chatogrator\Cards\Elements\Image;
 use OpenCompany\Chatogrator\Cards\Elements\Text;
@@ -39,6 +40,7 @@ class LinearCardRenderer
                 'divider' => $parts[] = '---',
                 'fields' => $parts[] = $this->renderFields($element['fields']),
                 'actions' => $parts[] = $this->renderActions($element['actions']),
+                'card_link' => $parts[] = '['.$element['link']->label.']('.$element['link']->url.')',
                 default => null,
             };
         }

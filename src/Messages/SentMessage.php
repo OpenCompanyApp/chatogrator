@@ -37,4 +37,14 @@ class SentMessage extends Message
     {
         $this->adapter->removeReaction($this->threadId, $this->id, $emoji);
     }
+
+    public function pin(): void
+    {
+        $this->adapter->pinMessage($this->threadId, $this->id);
+    }
+
+    public function unpin(): void
+    {
+        $this->adapter->unpinMessage($this->threadId, $this->id);
+    }
 }

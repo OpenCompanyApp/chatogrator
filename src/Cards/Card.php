@@ -2,6 +2,8 @@
 
 namespace OpenCompany\Chatogrator\Cards;
 
+use OpenCompany\Chatogrator\Cards\Elements\CardLink;
+
 /** @phpstan-consistent-constructor */
 class Card
 {
@@ -54,6 +56,13 @@ class Card
     public function fields(array $fields): static
     {
         $this->elements[] = ['type' => 'fields', 'fields' => $fields];
+
+        return $this;
+    }
+
+    public function link(string $url, string $label): static
+    {
+        $this->elements[] = ['type' => 'card_link', 'link' => new CardLink($url, $label)];
 
         return $this;
     }

@@ -66,6 +66,8 @@ class Chat
     /** @var list<callable> */
     protected array $unsubscribeHandlers = [];
 
+    protected int $dedupeTtlSeconds = 300;
+
     protected bool $queued = false;
 
     protected ?string $queueName = null;
@@ -109,6 +111,13 @@ class Chat
     public function getLogger(): LoggerInterface
     {
         return $this->logger;
+    }
+
+    public function dedupeTtl(int $seconds): static
+    {
+        $this->dedupeTtlSeconds = $seconds;
+
+        return $this;
     }
 
     public function queued(bool $queued = true, ?string $queue = null): static
@@ -289,7 +298,7 @@ class Chat
         if ($this->stateAdapter?->get($dedupeKey) !== null) {
             return;
         }
-        $this->stateAdapter?->set($dedupeKey, true, 60);
+        $this->stateAdapter?->set($dedupeKey, true, $this->dedupeTtlSeconds);
 
         // Acquire lock
         $lock = $this->stateAdapter?->acquireLock($threadId);
@@ -300,6 +309,7 @@ class Chat
                 adapter: $adapter,
                 chat: $this,
             );
+            $thread->currentMessage = $message;
 
             $isSubscribed = $this->stateAdapter?->isSubscribed($threadId) ?? false;
             $isMention = $message->isMention || $this->detectMention($adapter, $message);

@@ -2,6 +2,7 @@
 
 namespace OpenCompany\Chatogrator\Adapters\Slack;
 
+use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Http;
@@ -10,6 +11,7 @@ use OpenCompany\Chatogrator\Chat;
 use OpenCompany\Chatogrator\Contracts\Adapter;
 use OpenCompany\Chatogrator\Errors\ValidationError;
 use OpenCompany\Chatogrator\Messages\Author;
+use OpenCompany\Chatogrator\Messages\FileUpload;
 use OpenCompany\Chatogrator\Messages\Message;
 use OpenCompany\Chatogrator\Messages\PostableMessage;
 use OpenCompany\Chatogrator\Messages\SentMessage;
@@ -32,12 +34,23 @@ class SlackAdapter implements Adapter
     protected ?SlackFormatConverter $formatConverter = null;
 
     /** @param array<string, mixed> $config */
-    public static function fromConfig(array $config): static
+    public static function fromConfig(array $config = []): static
     {
         $instance = new static;
-        $instance->config = $config;
+        $instance->config = array_merge(static::envDefaults(), $config);
 
         return $instance;
+    }
+
+    /** @return array<string, mixed> */
+    protected static function envDefaults(): array
+    {
+        return array_filter([
+            'bot_token' => config('services.slack.bot_token', env('SLACK_BOT_TOKEN')),
+            'signing_secret' => config('services.slack.signing_secret', env('SLACK_SIGNING_SECRET')),
+            'bot_user_id' => config('services.slack.bot_user_id', env('SLACK_BOT_USER_ID')),
+            'user_name' => config('services.slack.user_name', env('SLACK_BOT_NAME')),
+        ], fn ($v) => $v !== null);
     }
 
     public function name(): string
@@ -568,8 +581,15 @@ class SlackAdapter implements Adapter
         }
 
         $response = $this->apiCall('chat.postMessage', $payload);
+        $sentMessage = $this->buildSentMessage($response, $threadId);
 
-        return $this->buildSentMessage($response, $threadId);
+        // Upload files in batch if present
+        $files = $message->getFiles();
+        if (! empty($files)) {
+            $this->uploadFiles($files, $decoded['channel'], $decoded['threadTs'] ?: ($response['ts'] ?? ''));
+        }
+
+        return $sentMessage;
     }
 
     public function editMessage(string $threadId, string $messageId, PostableMessage $message): SentMessage
@@ -626,9 +646,19 @@ class SlackAdapter implements Adapter
         ]);
     }
 
-    public function startTyping(string $threadId): void
+    public function startTyping(string $threadId, ?string $status = null): void
     {
-        // Slack doesn't have a public API for typing indicators
+        if ($status === null) {
+            return;
+        }
+
+        $decoded = $this->decodeThreadId($threadId);
+
+        $this->apiCall('assistant.threads.setStatus', [
+            'channel_id' => $decoded['channel'],
+            'thread_ts' => $decoded['threadTs'],
+            'status' => $status,
+        ]);
     }
 
     public function fetchMessages(string $threadId, ?FetchOptions $options = null): FetchResult
@@ -871,6 +901,106 @@ class SlackAdapter implements Adapter
     public function onThreadSubscribe(string $threadId): void
     {
         //
+    }
+
+    public function sendFile(string $threadId, FileUpload $file): ?SentMessage
+    {
+        $decoded = $this->decodeThreadId($threadId);
+        $channelId = $decoded['channel'];
+        $threadTs = $decoded['threadTs'] ?? '';
+
+        $result = $this->uploadFiles([$file], $channelId, $threadTs);
+
+        if (empty($result)) {
+            return null;
+        }
+
+        return $this->buildSentMessage(['ts' => ''], $threadId);
+    }
+
+    public function pinMessage(string $threadId, string $messageId): void
+    {
+        $decoded = $this->decodeThreadId($threadId);
+
+        $this->apiCall('pins.add', [
+            'channel' => $decoded['channel'],
+            'timestamp' => $messageId,
+        ]);
+    }
+
+    public function unpinMessage(string $threadId, string $messageId): void
+    {
+        $decoded = $this->decodeThreadId($threadId);
+
+        $this->apiCall('pins.remove', [
+            'channel' => $decoded['channel'],
+            'timestamp' => $messageId,
+        ]);
+    }
+
+    // ── File Uploads ─────────────────────────────────────────────────
+
+    /**
+     * Upload files using Slack's batch upload API.
+     *
+     * @param  list<\OpenCompany\Chatogrator\Messages\FileUpload>  $files
+     * @return list<array<string, mixed>>
+     */
+    protected function uploadFiles(array $files, string $channelId, string $threadTs = ''): array
+    {
+        if (empty($files)) {
+            return [];
+        }
+
+        // Step 1: Get upload URLs for each file
+        $uploadEntries = [];
+        foreach ($files as $file) {
+            $response = $this->apiCall('files.getUploadURLExternal', [
+                'filename' => $file->filename,
+                'length' => strlen($file->getContents()),
+            ]);
+
+            if (! ($response['ok'] ?? false)) {
+                continue;
+            }
+
+            $uploadEntries[] = [
+                'upload_url' => $response['upload_url'],
+                'file_id' => $response['file_id'],
+                'file' => $file,
+            ];
+        }
+
+        if (empty($uploadEntries)) {
+            return [];
+        }
+
+        // Step 2: Upload file content to each URL in parallel
+        Http::pool(fn (Pool $pool) => array_map(
+            fn ($entry) => $pool->withBody($entry['file']->getContents(), $entry['file']->mimeType)
+                ->post($entry['upload_url']),
+            $uploadEntries
+        ));
+
+        // Step 3: Complete uploads — share files to channel/thread
+        $fileUploads = array_map(
+            fn ($entry) => ['id' => $entry['file_id'], 'title' => $entry['file']->filename],
+            $uploadEntries
+        );
+
+        $completePayload = ['files' => $fileUploads];
+
+        if ($channelId !== '') {
+            $completePayload['channel_id'] = $channelId;
+        }
+
+        if ($threadTs !== '') {
+            $completePayload['thread_ts'] = $threadTs;
+        }
+
+        $result = $this->apiCall('files.completeUploadExternal', $completePayload);
+
+        return $result['files'] ?? [];
     }
 
     // ── Internal Helpers ─────────────────────────────────────────────

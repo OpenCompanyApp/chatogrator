@@ -3,6 +3,7 @@
 namespace OpenCompany\Chatogrator\Adapters\GoogleChat;
 
 use OpenCompany\Chatogrator\Cards\Card;
+use OpenCompany\Chatogrator\Cards\Elements\CardLink;
 use OpenCompany\Chatogrator\Cards\Elements\Divider;
 use OpenCompany\Chatogrator\Cards\Elements\Image;
 use OpenCompany\Chatogrator\Cards\Elements\Text;
@@ -35,6 +36,7 @@ class GoogleChatCardRenderer
                 'divider' => $sections[] = ['widgets' => [['divider' => []]]],
                 'fields' => $sections[] = $this->renderFields($element['fields']),
                 'actions' => $sections[] = $this->renderActions($element['actions'], $options),
+                'card_link' => $sections[] = $this->renderCardLink($element['link']),
                 default => null,
             };
         }
@@ -105,6 +107,12 @@ class GoogleChatCardRenderer
         }
 
         return $header;
+    }
+
+    /** @return array<string, mixed> */
+    protected function renderCardLink(CardLink $link): array
+    {
+        return ['widgets' => [['textParagraph' => ['text' => '<a href="'.$link->url.'">'.$link->label.'</a>']]]];
     }
 
     /**

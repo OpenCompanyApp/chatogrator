@@ -3,6 +3,7 @@
 namespace OpenCompany\Chatogrator\Adapters\Slack;
 
 use OpenCompany\Chatogrator\Cards\Card;
+use OpenCompany\Chatogrator\Cards\Elements\CardLink;
 use OpenCompany\Chatogrator\Cards\Elements\Divider;
 use OpenCompany\Chatogrator\Cards\Elements\Image;
 use OpenCompany\Chatogrator\Cards\Elements\Text;
@@ -50,6 +51,7 @@ class SlackCardRenderer
                 'divider' => $blocks[] = ['type' => 'divider'],
                 'fields' => $blocks[] = $this->renderFields($element['fields']),
                 'actions' => $blocks[] = $this->renderActions($element['actions']),
+                'card_link' => $blocks[] = $this->renderCardLink($element['link']),
                 default => null,
             };
         }
@@ -175,6 +177,15 @@ class SlackCardRenderer
         }
 
         return ['type' => 'actions', 'elements' => $elements];
+    }
+
+    /** @return array<string, mixed> */
+    protected function renderCardLink(CardLink $link): array
+    {
+        return [
+            'type' => 'section',
+            'text' => ['type' => 'mrkdwn', 'text' => '<'.$link->url.'|'.$link->label.'>'],
+        ];
     }
 
     protected function convertBoldToSlack(string $text): string

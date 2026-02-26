@@ -3,6 +3,7 @@
 namespace OpenCompany\Chatogrator\Adapters\Discord;
 
 use OpenCompany\Chatogrator\Cards\Card;
+use OpenCompany\Chatogrator\Cards\Elements\CardLink;
 use OpenCompany\Chatogrator\Cards\Elements\Divider;
 use OpenCompany\Chatogrator\Cards\Elements\Image;
 use OpenCompany\Chatogrator\Cards\Elements\Text;
@@ -71,6 +72,11 @@ class DiscordCardRenderer
                         $descriptionParts,
                         $this->renderSectionToDescription($element['elements'])
                     );
+                    break;
+
+                case 'card_link':
+                    $link = $element['link'];
+                    $descriptionParts[] = '['.$link->label.']('.$link->url.')';
                     break;
 
                 case 'divider':

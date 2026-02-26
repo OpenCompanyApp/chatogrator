@@ -3,6 +3,7 @@
 namespace OpenCompany\Chatogrator\Adapters\Telegram;
 
 use OpenCompany\Chatogrator\Cards\Card;
+use OpenCompany\Chatogrator\Cards\Elements\CardLink;
 use OpenCompany\Chatogrator\Cards\Elements\Divider;
 use OpenCompany\Chatogrator\Cards\Elements\Image;
 use OpenCompany\Chatogrator\Cards\Elements\Text;
@@ -43,6 +44,7 @@ class TelegramCardRenderer
                 'divider' => $lines[] = '———',
                 'fields' => $this->renderFields($element['fields'], $lines),
                 'actions' => $this->renderActions($element['actions'], $keyboardRows),
+                'card_link' => $lines[] = '<a href="'.TelegramFormatConverter::escapeHtml($element['link']->url).'">'.TelegramFormatConverter::escapeHtml($element['link']->label).'</a>',
                 default => null,
             };
         }

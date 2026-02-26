@@ -4,6 +4,7 @@ namespace OpenCompany\Chatogrator\Threads;
 
 use OpenCompany\Chatogrator\Chat;
 use OpenCompany\Chatogrator\Contracts\Adapter;
+use OpenCompany\Chatogrator\Messages\Message;
 use OpenCompany\Chatogrator\Messages\PostableMessage;
 use OpenCompany\Chatogrator\Messages\SentMessage;
 use OpenCompany\Chatogrator\Types\FetchOptions;
@@ -14,6 +15,8 @@ class Thread
 {
     /** @var array<string, mixed> */
     protected array $state = [];
+
+    public ?Message $currentMessage = null;
 
     public function __construct(
         public readonly string $id,
@@ -147,9 +150,9 @@ class Thread
         return $this;
     }
 
-    public function startTyping(): void
+    public function startTyping(?string $status = null): void
     {
-        $this->adapter->startTyping($this->id);
+        $this->adapter->startTyping($this->id, $status);
     }
 
     public function mentionUser(string $userId): string
@@ -173,12 +176,18 @@ class Thread
     /** @return array<string, mixed> */
     public function toJSON(): array
     {
-        return [
+        $data = [
             'id' => $this->id,
             'adapterName' => $this->adapter->name(),
             'channelId' => $this->channelId,
             'isDM' => $this->isDM,
         ];
+
+        if ($this->currentMessage !== null) {
+            $data['currentMessage'] = $this->currentMessage->toJSON();
+        }
+
+        return $data;
     }
 
     /** @param array<string, mixed> $data */
@@ -186,12 +195,18 @@ class Thread
     {
         $adapter = $chat->getAdapter($data['adapterName']);
 
-        return new static(
+        $thread = new static(
             id: $data['id'],
             adapter: $adapter,
             chat: $chat,
             channelId: $data['channelId'] ?? null,
             isDM: $data['isDM'] ?? false,
         );
+
+        if (isset($data['currentMessage'])) {
+            $thread->currentMessage = Message::fromJSON($data['currentMessage']);
+        }
+
+        return $thread;
     }
 }

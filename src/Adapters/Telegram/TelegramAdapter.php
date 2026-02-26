@@ -13,6 +13,7 @@ use OpenCompany\Chatogrator\Errors\AdapterError;
 use OpenCompany\Chatogrator\Errors\NotImplementedError;
 use OpenCompany\Chatogrator\Errors\ValidationError;
 use OpenCompany\Chatogrator\Messages\Author;
+use OpenCompany\Chatogrator\Messages\FileUpload;
 use OpenCompany\Chatogrator\Messages\Message;
 use OpenCompany\Chatogrator\Messages\PostableMessage;
 use OpenCompany\Chatogrator\Messages\SentMessage;
@@ -42,12 +43,23 @@ class TelegramAdapter implements Adapter
     /**
      * @param array<string, mixed> $config
      */
-    public static function fromConfig(array $config): static
+    public static function fromConfig(array $config = []): static
     {
         $instance = new static;
-        $instance->config = $config;
+        $instance->config = array_merge(static::envDefaults(), $config);
 
         return $instance;
+    }
+
+    /** @return array<string, mixed> */
+    protected static function envDefaults(): array
+    {
+        return array_filter([
+            'bot_token' => config('services.telegram.bot_token', env('TELEGRAM_BOT_TOKEN')),
+            'webhook_secret' => config('services.telegram.webhook_secret', env('TELEGRAM_WEBHOOK_SECRET')),
+            'bot_user_id' => config('services.telegram.bot_user_id', env('TELEGRAM_BOT_USER_ID')),
+            'bot_username' => config('services.telegram.bot_username', env('TELEGRAM_BOT_USERNAME')),
+        ], fn ($v) => $v !== null);
     }
 
     public function name(): string
@@ -706,7 +718,7 @@ class TelegramAdapter implements Adapter
         ]);
     }
 
-    public function startTyping(string $threadId): void
+    public function startTyping(string $threadId, ?string $status = null): void
     {
         $decoded = $this->decodeThreadId($threadId);
 
@@ -842,6 +854,87 @@ class TelegramAdapter implements Adapter
         //
     }
 
+    public function sendFile(string $threadId, FileUpload $file): ?SentMessage
+    {
+        $decoded = $this->decodeThreadId($threadId);
+        $chatId = $decoded['chatId'];
+        $messageThreadId = $decoded['messageThreadId'] ?? null;
+
+        $isImage = str_starts_with($file->mimeType, 'image/') && ! $file->forceDocument;
+        $method = $isImage ? 'sendPhoto' : 'sendDocument';
+        $fileKey = $isImage ? 'photo' : 'document';
+
+        $params = ['chat_id' => $chatId];
+        if ($messageThreadId !== null) {
+            $params['message_thread_id'] = (int) $messageThreadId;
+        }
+        if ($file->caption) {
+            $params['caption'] = mb_substr($file->caption, 0, self::MAX_CAPTION_LENGTH);
+        }
+
+        $botToken = $this->config['bot_token'] ?? '';
+        $url = "https://api.telegram.org/bot{$botToken}/{$method}";
+
+        if ($file->url !== null) {
+            // Telegram accepts URLs directly — no multipart needed
+            $params[$fileKey] = $file->url;
+            $response = Http::timeout(30)->post($url, $params);
+        } else {
+            // Upload from path or content buffer via multipart
+            $contents = $file->path !== null && file_exists($file->path)
+                ? file_get_contents($file->path)
+                : ($file->content ?? '');
+
+            $response = Http::timeout(30)
+                ->attach($fileKey, $contents, $file->filename)
+                ->post($url, $params);
+        }
+
+        $data = $response->json() ?? [];
+
+        if (! ($data['ok'] ?? false)) {
+            // Auto-retry as document if photo dimensions are rejected
+            if ($isImage && str_contains($data['description'] ?? '', 'PHOTO_INVALID_DIMENSIONS')) {
+                return $this->sendFile($threadId, new FileUpload(
+                    content: $file->content,
+                    filename: $file->filename,
+                    mimeType: $file->mimeType,
+                    path: $file->path,
+                    url: $file->url,
+                    caption: $file->caption,
+                    forceDocument: true,
+                ));
+            }
+
+            throw new AdapterError(
+                'Telegram API error: '.($data['description'] ?? 'Unknown error')
+            );
+        }
+
+        return $this->buildSentMessage($data['result'] ?? [], $threadId);
+    }
+
+    public function pinMessage(string $threadId, string $messageId): void
+    {
+        $decoded = $this->decodeThreadId($threadId);
+
+        $this->apiCall('pinChatMessage', [
+            'chat_id' => $decoded['chatId'],
+            'message_id' => (int) $messageId,
+            'disable_notification' => true,
+        ]);
+    }
+
+    public function unpinMessage(string $threadId, string $messageId): void
+    {
+        $decoded = $this->decodeThreadId($threadId);
+
+        $this->apiCall('unpinChatMessage', [
+            'chat_id' => $decoded['chatId'],
+            'message_id' => (int) $messageId,
+        ]);
+    }
+
     // ── Internal Helpers ─────────────────────────────────────────────
 
     /**
@@ -940,32 +1033,17 @@ class TelegramAdapter implements Adapter
     }
 
     /**
-     * @param array<int, mixed> $files
+     * @param  array<int, FileUpload>  $files
      */
     protected function sendFiles(string $chatId, array $files, ?string $messageThreadId = null): void
     {
+        $threadId = $this->encodeThreadId(array_filter([
+            'chatId' => $chatId,
+            'messageThreadId' => $messageThreadId,
+        ]));
+
         foreach ($files as $file) {
-            $payload = ['chat_id' => $chatId];
-
-            if ($messageThreadId !== null) {
-                $payload['message_thread_id'] = (int) $messageThreadId;
-            }
-
-            $mimeType = $file->mimeType ?? 'application/octet-stream';
-
-            if (str_starts_with($mimeType, 'image/')) {
-                $payload['photo'] = $file->path ?? $file->url ?? '';
-                if ($file->caption ?? null) {
-                    $payload['caption'] = mb_substr($file->caption, 0, self::MAX_CAPTION_LENGTH);
-                }
-                $this->apiCall('sendPhoto', $payload);
-            } else {
-                $payload['document'] = $file->path ?? $file->url ?? '';
-                if ($file->caption ?? null) {
-                    $payload['caption'] = mb_substr($file->caption, 0, self::MAX_CAPTION_LENGTH);
-                }
-                $this->apiCall('sendDocument', $payload);
-            }
+            $this->sendFile($threadId, $file);
         }
     }
 

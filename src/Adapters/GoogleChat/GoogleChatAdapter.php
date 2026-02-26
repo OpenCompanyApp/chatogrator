@@ -14,6 +14,7 @@ use OpenCompany\Chatogrator\Errors\ValidationError;
 use OpenCompany\Chatogrator\Messages\Author;
 use OpenCompany\Chatogrator\Messages\Message;
 use OpenCompany\Chatogrator\Messages\PostableMessage;
+use OpenCompany\Chatogrator\Messages\FileUpload;
 use OpenCompany\Chatogrator\Messages\SentMessage;
 use OpenCompany\Chatogrator\Types\ChannelInfo;
 use OpenCompany\Chatogrator\Types\FetchOptions;
@@ -37,12 +38,21 @@ class GoogleChatAdapter implements Adapter
     protected ?StateAdapter $stateAdapter = null;
 
     /** @param array<string, mixed> $config */
-    public static function fromConfig(array $config): static
+    public static function fromConfig(array $config = []): static
     {
         $instance = new static;
-        $instance->config = $config;
+        $instance->config = array_merge(static::envDefaults(), $config);
 
         return $instance;
+    }
+
+    /** @return array<string, mixed> */
+    protected static function envDefaults(): array
+    {
+        return array_filter([
+            'bot_name' => config('services.gchat.bot_name', env('GCHAT_BOT_NAME')),
+            'bot_user_id' => config('services.gchat.bot_user_id', env('GCHAT_BOT_USER_ID')),
+        ], fn ($v) => $v !== null);
     }
 
     public function name(): string
@@ -545,7 +555,7 @@ class GoogleChatAdapter implements Adapter
         throw new NotImplementedError('Method not implemented');
     }
 
-    public function startTyping(string $threadId): void
+    public function startTyping(string $threadId, ?string $status = null): void
     {
         // Google Chat doesn't support typing indicators
     }
@@ -596,6 +606,21 @@ class GoogleChatAdapter implements Adapter
     }
 
     public function onThreadSubscribe(string $threadId): void
+    {
+        //
+    }
+
+    public function sendFile(string $threadId, FileUpload $file): ?SentMessage
+    {
+        return null;
+    }
+
+    public function pinMessage(string $threadId, string $messageId): void
+    {
+        //
+    }
+
+    public function unpinMessage(string $threadId, string $messageId): void
     {
         //
     }
