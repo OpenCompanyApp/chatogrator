@@ -996,6 +996,8 @@ class TelegramAdapter implements Adapter
     }
 
     /**
+     * Split text at safe boundaries, never inside <pre> blocks.
+     *
      * @return list<string>
      */
     protected function splitAtLineBoundaries(string $text, int $maxLength): array
@@ -1004,32 +1006,54 @@ class TelegramAdapter implements Adapter
             return [$text];
         }
 
+        // Split into segments: alternating text and <pre>...</pre> blocks
+        $segments = preg_split('/(<pre>.*?<\/pre>)/s', $text, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+
         $chunks = [];
-        $lines = explode("\n", $text);
-        $currentChunk = '';
+        $current = '';
 
-        foreach ($lines as $line) {
-            $candidate = $currentChunk === '' ? $line : $currentChunk."\n".$line;
+        foreach ($segments as $segment) {
+            $isPre = str_starts_with($segment, '<pre>');
 
-            if (mb_strlen($candidate) > $maxLength) {
-                if ($currentChunk !== '') {
-                    $chunks[] = $currentChunk;
-                    $currentChunk = $line;
+            if ($isPre) {
+                // Never split a <pre> block — flush current and give it its own chunk if needed
+                if (mb_strlen($current.$segment) <= $maxLength) {
+                    $current .= $segment;
                 } else {
-                    // Single line exceeds max; force-split
-                    $chunks[] = mb_substr($line, 0, $maxLength);
-                    $currentChunk = mb_substr($line, $maxLength);
+                    if ($current !== '') {
+                        $chunks[] = trim($current);
+                        $current = '';
+                    }
+                    // Pre block alone (may exceed max, but we can't split it safely)
+                    $chunks[] = trim($segment);
                 }
             } else {
-                $currentChunk = $candidate;
+                // Regular text — split at line boundaries
+                $lines = explode("\n", $segment);
+                foreach ($lines as $line) {
+                    $candidate = $current === '' ? $line : $current."\n".$line;
+
+                    if (mb_strlen($candidate) > $maxLength) {
+                        if ($current !== '') {
+                            $chunks[] = trim($current);
+                            $current = $line;
+                        } else {
+                            // Single line exceeds max; force-split
+                            $chunks[] = mb_substr($line, 0, $maxLength);
+                            $current = mb_substr($line, $maxLength);
+                        }
+                    } else {
+                        $current = $candidate;
+                    }
+                }
             }
         }
 
-        if ($currentChunk !== '') {
-            $chunks[] = $currentChunk;
+        if (trim($current) !== '') {
+            $chunks[] = trim($current);
         }
 
-        return $chunks;
+        return array_values(array_filter($chunks, fn ($c) => $c !== ''));
     }
 
     /**

@@ -23,6 +23,14 @@ class TelegramFormatConverter extends BaseFormatConverter
             return $placeholder;
         }, $text);
 
+        // Convert markdown tables to pre-formatted monospace blocks
+        $text = preg_replace_callback('/^(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)+)/m', function ($match) use (&$codeBlocks) {
+            $placeholder = "\x00CODEBLOCK".count($codeBlocks)."\x00";
+            $codeBlocks[] = '<pre>'.self::escapeHtml(self::formatTable($match[0])).'</pre>';
+
+            return $placeholder;
+        }, $text);
+
         // Extract inline code to protect it
         $inlineCode = [];
         $text = preg_replace_callback('/`([^`]+)`/', function ($match) use (&$inlineCode) {
@@ -176,5 +184,95 @@ class TelegramFormatConverter extends BaseFormatConverter
     public static function unescapeHtml(string $text): string
     {
         return html_entity_decode($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+
+    /**
+     * Format a markdown table into aligned plain-text columns.
+     */
+    private static function formatTable(string $tableMarkdown): string
+    {
+        $lines = array_filter(explode("\n", trim($tableMarkdown)), fn ($l) => trim($l) !== '');
+        $rows = [];
+
+        foreach ($lines as $line) {
+            $cells = array_map('trim', explode('|', trim($line, '|')));
+            // Skip separator rows (----, :---:, etc.)
+            if (preg_match('/^[-: ]+$/', $cells[0])) {
+                continue;
+            }
+            $cells = array_map([self::class, 'stripMarkdown'], $cells);
+            $rows[] = $cells;
+        }
+
+        if (empty($rows)) {
+            return $tableMarkdown;
+        }
+
+        // Calculate column widths using visual width (handles emoji/CJK)
+        $colWidths = [];
+        foreach ($rows as $row) {
+            foreach ($row as $i => $cell) {
+                $colWidths[$i] = max($colWidths[$i] ?? 0, self::visualWidth($cell));
+            }
+        }
+
+        // Build aligned output
+        $output = [];
+        foreach ($rows as $ri => $row) {
+            $parts = [];
+            foreach ($row as $i => $cell) {
+                $parts[] = self::visualPad($cell, $colWidths[$i] ?? 0);
+            }
+            $output[] = implode('  ', $parts);
+            // Add separator after header
+            if ($ri === 0) {
+                $sep = [];
+                foreach ($colWidths as $w) {
+                    $sep[] = str_repeat('-', $w);
+                }
+                $output[] = implode('  ', $sep);
+            }
+        }
+
+        return implode("\n", $output);
+    }
+
+    /**
+     * Strip markdown formatting markers from text.
+     */
+    private static function stripMarkdown(string $text): string
+    {
+        $text = preg_replace('/\*\*(.+?)\*\*/', '$1', $text);
+        $text = preg_replace('/__(.+?)__/', '$1', $text);
+        $text = preg_replace('/(?<!\w)\*([^*]+?)\*(?!\w)/', '$1', $text);
+        $text = preg_replace('/(?<!\w)_([^_]+?)_(?!\w)/', '$1', $text);
+        $text = preg_replace('/~~(.+?)~~/', '$1', $text);
+
+        return $text;
+    }
+
+    /**
+     * Calculate visual width of a string, accounting for double-width characters.
+     */
+    private static function visualWidth(string $text): int
+    {
+        $width = mb_strwidth($text, 'UTF-8');
+
+        // Emoji ranges that mb_strwidth may miss
+        preg_match_all('/[\x{1F300}-\x{1F9FF}\x{2600}-\x{27BF}\x{FE00}-\x{FE0F}\x{200D}]/u', $text, $emoji);
+        $width += count($emoji[0]);
+
+        return $width;
+    }
+
+    /**
+     * Pad a string to a target visual width.
+     */
+    private static function visualPad(string $text, int $targetWidth): string
+    {
+        $currentWidth = self::visualWidth($text);
+        $padding = $targetWidth - $currentWidth;
+
+        return $padding > 0 ? $text.str_repeat(' ', $padding) : $text;
     }
 }
